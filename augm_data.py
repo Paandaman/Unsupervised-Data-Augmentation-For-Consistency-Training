@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from toymodel import Toynetwork
 from randaugment import policies as found_policies
 from randaugment import augmentation_transforms
+from wide_resnet import Wide_ResNet 
 
 
 def split_data(dataset):
@@ -27,12 +28,19 @@ def unsupervised_batch(model, batch):
     x, _ = batch
     # As suggested by Miyato et al.
     with torch.no_grad():
+        #TODO add "simple_augm" here
         y_ = model(x)
     x_augm = random_augmentation(x)
     y_augm = model(x_augm)
     kl = _kl_divergence_with_logits(y_, y_augm)
     kl = torch.mean(kl)
     return kl
+
+
+def simple_augm(x):
+    # fix later
+    pass
+
 
 def random_augmentation(x):
     # They are actually performing this beforehand and 
@@ -84,18 +92,22 @@ def update_eta(T: int, k: int, step: int) -> float:
 
 
 def train():
-    model = Toynetwork()
+    model = Wide_ResNet(28, 2, 0.3, 10)
     data_transform = transforms.Compose([
+        transforms.RandomCrop(32),
+        transforms.RandomHorizontalFlip(),
         transforms.ToTensor()
     ])
+
     trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
-    valset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
+    #valset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
     testset  = datasets.CIFAR10(root='./data', train=False, download=True, transform=data_transform)
+    #unlab_trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.ToTensor()) 
 
     labeled_idx, unlabeled_idx = split_data(trainset)
 
     subsampler_lab = torch.utils.data.SubsetRandomSampler(labeled_idx)
-    subsampler_unlab = torch.utils.data.SubsetRandomSampler(unlabeled_idx)
+    #subsampler_unlab = torch.utils.data.SubsetRandomSampler(unlabeled_idx)
     labeled_trainloader = torch.utils.data.DataLoader(
         trainset,
         batch_size=32,
@@ -104,14 +116,14 @@ def train():
     )
     unlabeled_trainloader = torch.utils.data.DataLoader(
         trainset,
-        batch_size=64,
-        sampler=subsampler_unlab,
+        batch_size=320,
+        sampler=subsampler_lab,
         pin_memory=True,
     )
 
     optimizer = optim.SGD(
         model.parameters(), 
-        lr=0.001
+        lr=0.003
     )
     steps = int(4e5)
     lambd = 1
@@ -131,6 +143,9 @@ def train():
         print(total_loss)
         total_loss.backward()
         optimizer.step()
+        
+        if step % 1000 == 0 and step != 0:
+            print('Get Accuracy here')
 # finns en del saker kvar i dataloading, gor samma preprocessing 
 
 

@@ -61,7 +61,6 @@ def random_augmentation(x):
             chosen_policy, x[i,:,:,:].permute(1,2,0).numpy())
         aug_image = augmentation_transforms.cutout_numpy(aug_image)
         x_augm[i,:,:,:] = torch.tensor(aug_image).permute(2,0,1)
-
     return x_augm
 
 
@@ -78,7 +77,7 @@ def training_signal_annealing(pred, ground_truth, eta):
     correct_label_probs = torch.sum(pred*onehot, -1)
     smaller_than_threshold = torch.lt(correct_label_probs, eta).float()
     smaller_than_threshold.requires_grad = False
-    Z = np.maximum(torch.sum(smaller_than_threshold), 1)
+    Z = np.maximum(torch.sum(smaller_than_threshold), 1).float()
     masked_loss = torch.log(correct_label_probs)*smaller_than_threshold 
     # Note: they do not seem to be using log even though they say so in the paper
     loss = torch.sum(-masked_loss)

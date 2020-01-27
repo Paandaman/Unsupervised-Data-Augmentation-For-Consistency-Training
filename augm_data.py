@@ -10,6 +10,12 @@ from randaugment import augmentation_transforms
 from wide_resnet import Wide_ResNet 
 
 
+if torch.cuda.is_available():
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)
+else:
+    torch.set_default_tensor_type(torch.FloatTensor)
+
+
 def split_data(dataset):
     pool_idx = np.arange(len(dataset))
     np.random.seed()
@@ -30,7 +36,7 @@ def unsupervised_batch(model, batch):
     with torch.no_grad():
         #TODO add "simple_augm" here
         y_ = model(x)
-    x_augm = random_augmentation(x)
+    x_augm = random_augmentation(x).float()
     y_augm = model(x_augm)
     kl = _kl_divergence_with_logits(y_, y_augm)
     kl = torch.mean(kl)
@@ -43,9 +49,9 @@ def simple_augm(x):
 
 
 def random_augmentation(x):
-    # They are actually performing this beforehand and 
-    # saving all samples ==> saves a lot of computation
-    # but also less random in the end, no?
+    # Original implementation performs these augmentations beforehand 
+    # and saves all samples ==> saves a lot of computation
+    # but also results in less variation 
     aug_policies = found_policies.randaug_policies()
     x_augm = torch.zeros_like(x)
     for i in range(x.size()[0]):
@@ -68,12 +74,13 @@ def _kl_divergence_with_logits(p_logits, q_logits):
 
 
 def training_signal_annealing(pred, ground_truth, eta):
-    onehot = F.one_hot(ground_truth, num_classes=10)
+    onehot = F.one_hot(ground_truth, num_classes=10).float()
     correct_label_probs = torch.sum(pred*onehot, -1)
-    smaller_than_threshold = torch.lt(correct_label_probs, eta)
+    smaller_than_threshold = torch.lt(correct_label_probs, eta).float()
     smaller_than_threshold.requires_grad = False
     Z = np.maximum(torch.sum(smaller_than_threshold), 1)
-    masked_loss = torch.log(correct_label_probs)*smaller_than_threshold # Note: they do not seem to be using log even though they say so in the paper
+    masked_loss = torch.log(correct_label_probs)*smaller_than_threshold 
+    # Note: they do not seem to be using log even though they say so in the paper
     loss = torch.sum(-masked_loss)
     return loss/Z
 
@@ -146,7 +153,6 @@ def train():
         
         if step % 1000 == 0 and step != 0:
             print('Get Accuracy here')
-# finns en del saker kvar i dataloading, gor samma preprocessing 
 
 
 if __name__ == "__main__":

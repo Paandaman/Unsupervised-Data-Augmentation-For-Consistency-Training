@@ -1,11 +1,11 @@
+import numpy as np
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-import sys
-import numpy as np
 
 def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=True)
@@ -61,9 +61,6 @@ class Wide_ResNet(nn.Module):
         self.linear = nn.Linear(nStages[3], num_classes)
 
     def _wide_layer(self, block, planes, num_blocks, dropout_rate, stride):
-        print('que', type(stride))
-        print('dd', num_blocks)
-        print('dd', type(num_blocks))
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
 

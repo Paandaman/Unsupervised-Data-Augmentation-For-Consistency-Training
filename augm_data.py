@@ -1,6 +1,9 @@
+import os
+
 import numpy as np
 import torch
 import torch.optim as optim
+from tensorboardX import SummaryWriter
 from torchvision import transforms, datasets
 from torch.nn import functional as F
 
@@ -136,6 +139,7 @@ def train():
     sup_batch_iterator = iter(labeled_trainloader)
     unsup_batch_iterator = iter(unlabeled_trainloader)
     classes = 10
+    writer = SummaryWriter(os.getcwd())
     for step in range(steps):
         optimizer.zero_grad()
         x_lab, sup_batch_iterator = get_next_batch(sup_batch_iterator, labeled_trainloader)
@@ -143,10 +147,14 @@ def train():
 
         eta = update_eta(steps, classes, step)
         supervised_loss = supervised_batch(model, x_lab, eta)
-                
+        writer.add_scalar("loss/supervised", supervised_loss.detach(), step)
+
         unsupervised_loss = unsupervised_batch(model, x_unlab)
+        writer.add_scalar("loss/unsupervised", unsupervised_loss.detach(), step)
+
         total_loss = supervised_loss + lambd*unsupervised_loss
         print(total_loss)
+        writer.add_scalar("loss/total", total_loss.detach(), step)
         total_loss.backward()
         optimizer.step()
         

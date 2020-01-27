@@ -37,18 +37,12 @@ def unsupervised_batch(model, batch):
     x, _ = batch
     # As suggested by Miyato et al.
     with torch.no_grad():
-        #TODO add "simple_augm" here
         y_ = model(x)
     x_augm = random_augmentation(x).float()
     y_augm = model(x_augm)
     kl = _kl_divergence_with_logits(y_, y_augm)
     kl = torch.mean(kl)
     return kl
-
-
-def simple_augm(x):
-    # fix later
-    pass
 
 
 def random_augmentation(x):
@@ -109,24 +103,24 @@ def train():
     ])
 
     trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
+    #TODO log validation loss and accuracy on test set
     #valset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
-    testset  = datasets.CIFAR10(root='./data', train=False, download=True, transform=data_transform)
-    #unlab_trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.ToTensor()) 
+    #testset  = datasets.CIFAR10(root='./data', train=False, download=True, transform=data_transform)
 
     labeled_idx, unlabeled_idx = split_data(trainset)
 
     subsampler_lab = torch.utils.data.SubsetRandomSampler(labeled_idx)
-    #subsampler_unlab = torch.utils.data.SubsetRandomSampler(unlabeled_idx)
+    subsampler_unlab = torch.utils.data.SubsetRandomSampler(unlabeled_idx)
     labeled_trainloader = torch.utils.data.DataLoader(
         trainset,
-        batch_size=32,
+        batch_size=8,#32,
         sampler=subsampler_lab,
         pin_memory=True,
     )
     unlabeled_trainloader = torch.utils.data.DataLoader(
         trainset,
-        batch_size=320,
-        sampler=subsampler_lab,
+        batch_size=12,#320,
+        sampler=subsampler_unlab,
         pin_memory=True,
     )
 

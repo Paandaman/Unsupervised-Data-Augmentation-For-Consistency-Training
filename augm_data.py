@@ -6,6 +6,7 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 from torchvision import transforms, datasets
 from torch.nn import functional as F
+from tqdm import tqdm
 
 from toymodel import Toynetwork
 from randaugment import policies as found_policies
@@ -15,8 +16,10 @@ from wide_resnet import Wide_ResNet
 
 if torch.cuda.is_available():
     torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    device = torch.device("cuda")
 else:
     torch.set_default_tensor_type(torch.FloatTensor)
+    device = torch.device("cpu")
 
 
 def split_data(dataset):
@@ -74,7 +77,7 @@ def training_signal_annealing(pred, ground_truth, eta):
     correct_label_probs = torch.sum(pred*onehot, -1)
     smaller_than_threshold = torch.lt(correct_label_probs, eta).float()
     smaller_than_threshold.requires_grad = False
-    Z = np.maximum(torch.sum(smaller_than_threshold), 1).float()
+    Z = np.maximum(torch.sum(smaller_than_threshold.cpu()), 1).float()
     masked_loss = torch.log(correct_label_probs)*smaller_than_threshold 
     # Note: they do not seem to be using log even though they say so in the paper
     loss = torch.sum(-masked_loss)
@@ -86,6 +89,7 @@ def get_next_batch(data_iter, data_loader):
     except StopIteration:
         data_iter = iter(data_loader)
         batch = next(data_iter)
+    batch = batch[0].to(device), batch[1].to(device)
     return batch, data_iter
 
 
@@ -94,8 +98,22 @@ def update_eta(T: int, k: int, step: int) -> float:
     return (step/T)*(1 - 1/k) + 1/k
 
 
+def calculate_accuracy(model, dataloader):
+    accuracy = 0
+    total = 0
+    for data in dataloader:
+        x, label = data
+        output = model(x)
+        _, pred = torch.max(output, 1)
+        total += label.size(0)
+        accuracy += (pred == label).sum().item()
+    
+    return accuracy/total
+
+
 def train():
     model = Wide_ResNet(28, 2, 0.3, 10)
+    model.to(device)
     data_transform = transforms.Compose([
         transforms.RandomCrop(32),
         transforms.RandomHorizontalFlip(),
@@ -103,38 +121,57 @@ def train():
     ])
 
     trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
-    #TODO log validation loss and accuracy on test set
-    #valset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
-    #testset  = datasets.CIFAR10(root='./data', train=False, download=True, transform=data_transform)
+    valset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
+    testset  = datasets.CIFAR10(root='./data', train=False, download=True, transform=data_transform)
 
     labeled_idx, unlabeled_idx = split_data(trainset)
+    labeled_idx_val, unlabeled_idx_val = split_data(valset)
 
     subsampler_lab = torch.utils.data.SubsetRandomSampler(labeled_idx)
     subsampler_unlab = torch.utils.data.SubsetRandomSampler(unlabeled_idx)
+    subsampler_val_lab = torch.utils.data.SubsetRandomSampler(labeled_idx_val)
+    subsampler_val_unlab = torch.utils.data.SubsetRandomSampler(unlabeled_idx_val)
+
     labeled_trainloader = torch.utils.data.DataLoader(
         trainset,
-        batch_size=8,#32,
+        batch_size=32,
         sampler=subsampler_lab,
-        pin_memory=True,
     )
     unlabeled_trainloader = torch.utils.data.DataLoader(
         trainset,
-        batch_size=12,#320,
+        batch_size=64,
         sampler=subsampler_unlab,
-        pin_memory=True,
+    )
+    labeled_val_trainloader = torch.utils.data.DataLoader(
+        valset,
+        batch_size=32,
+        sampler=subsampler_val_lab,
+    )
+    unlabeled_val_trainloader = torch.utils.data.DataLoader(
+        valset,
+        batch_size=64,
+        sampler=subsampler_val_unlab,
+    )
+    testloader = torch.utils.data.DataLoader(
+        testset,
+        batch_size = 32,
+        drop_last = True    
     )
 
     optimizer = optim.SGD(
         model.parameters(), 
-        lr=0.003
+        lr=0.001,
     )
+
     steps = int(4e5)
     lambd = 1
     sup_batch_iterator = iter(labeled_trainloader)
     unsup_batch_iterator = iter(unlabeled_trainloader)
+    sup_val_batch_iterator = iter(labeled_val_trainloader)
+    unsup_val_batch_iterator = iter(unlabeled_val_trainloader)
     classes = 10
     writer = SummaryWriter(os.getcwd())
-    for step in range(steps):
+    for step in tqdm(range(steps)):
         optimizer.zero_grad()
         x_lab, sup_batch_iterator = get_next_batch(sup_batch_iterator, labeled_trainloader)
         x_unlab, unsup_batch_iterator = get_next_batch(unsup_batch_iterator, unlabeled_trainloader)
@@ -147,13 +184,27 @@ def train():
         writer.add_scalar("loss/unsupervised", unsupervised_loss.detach(), step)
 
         total_loss = supervised_loss + lambd*unsupervised_loss
-        print(total_loss)
+
         writer.add_scalar("loss/total", total_loss.detach(), step)
         total_loss.backward()
         optimizer.step()
+
+        with torch.no_grad():
+            x_lab_val, sup_val_batch_iterator = get_next_batch(sup_val_batch_iterator, labeled_val_trainloader)
+            x_unlab_val, unsup_val_batch_iterator = get_next_batch(unsup_val_batch_iterator, unlabeled_val_trainloader)
+
+            supervised_val_loss = supervised_batch(model, x_lab_val, eta)
+            writer.add_scalar("loss/val_supervised", supervised_val_loss.detach(), step)
+
+            unsupervised_val_loss = unsupervised_batch(model, x_unlab_val)
+            writer.add_scalar("loss/val_unsupervised", unsupervised_val_loss.detach(), step)
+
+            total_val_loss = supervised_val_loss + lambd*unsupervised_val_loss
+            writer.add_scalar("loss/val_total", total_val_loss.detach(), step)    
         
-        if step % 1000 == 0 and step != 0:
-            print('Get Accuracy here')
+            if step % 200 == 0 and step != 0:
+                accuracy = calculate_accuracy(model, testloader)
+                writer.add_scalar("Test Accuracy", accuracy, step)
 
 
 if __name__ == "__main__":

@@ -134,22 +134,22 @@ def train():
 
     labeled_trainloader = torch.utils.data.DataLoader(
         trainset,
-        batch_size=32,
+        batch_size=64,
         sampler=subsampler_lab,
     )
     unlabeled_trainloader = torch.utils.data.DataLoader(
         trainset,
-        batch_size=64,
+        batch_size=320,
         sampler=subsampler_unlab,
     )
     labeled_val_trainloader = torch.utils.data.DataLoader(
         valset,
-        batch_size=32,
+        batch_size=64,
         sampler=subsampler_val_lab,
     )
     unlabeled_val_trainloader = torch.utils.data.DataLoader(
         valset,
-        batch_size=64,
+        batch_size=320,
         sampler=subsampler_val_unlab,
     )
     testloader = torch.utils.data.DataLoader(
@@ -160,7 +160,7 @@ def train():
 
     optimizer = optim.SGD(
         model.parameters(), 
-        lr=0.001,
+        lr=0.03,
     )
 
     steps = int(4e5)

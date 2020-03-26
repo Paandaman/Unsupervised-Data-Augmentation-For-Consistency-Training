@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+from sklearn.model_selection import train_test_split
 import torch
 import torch.optim as optim
 from tensorboardX import SummaryWriter
@@ -22,8 +23,7 @@ else:
     device = torch.device("cpu")
 
 
-def split_data(dataset):
-    pool_idx = np.arange(len(dataset))
+def split_data(pool_idx):
     np.random.seed()
     labeled_idx = np.random.permutation(pool_idx)[:4000]
     unlabeled_idx = np.setdiff1d(pool_idx, labeled_idx)
@@ -121,11 +121,13 @@ def train():
     ])
 
     trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
-    valset = datasets.CIFAR10(root='./data', train=True, download=True, transform=data_transform)
     testset  = datasets.CIFAR10(root='./data', train=False, download=True, transform=data_transform)
 
-    labeled_idx, unlabeled_idx = split_data(trainset)
-    labeled_idx_val, unlabeled_idx_val = split_data(valset)
+    train_idx, val_idx = train_test_split(
+        np.arange(len(trainset)), test_size=0.2, shuffle=True
+    )
+    labeled_idx, unlabeled_idx = split_data(train_idx)
+    labeled_idx_val, unlabeled_idx_val = split_data(val_idx)
 
     subsampler_lab = torch.utils.data.SubsetRandomSampler(labeled_idx)
     subsampler_unlab = torch.utils.data.SubsetRandomSampler(unlabeled_idx)
@@ -143,12 +145,12 @@ def train():
         sampler=subsampler_unlab,
     )
     labeled_val_trainloader = torch.utils.data.DataLoader(
-        valset,
+        trainset,
         batch_size=64,
         sampler=subsampler_val_lab,
     )
     unlabeled_val_trainloader = torch.utils.data.DataLoader(
-        valset,
+        trainset,
         batch_size=320,
         sampler=subsampler_val_unlab,
     )
